@@ -8,6 +8,7 @@ const renderFile = util.promisify(require("ejs").renderFile);
 const runningAsScript = !module.parent;
 
 const montgomeryBuilder = require("./montgomerybuilder");
+const armBuilder = require("./armbuilder");
 
 class ZqBuilder {
     constructor(q, name) {
@@ -25,6 +26,7 @@ class ZqBuilder {
             return label+"_"+self.lastTmp;
         };
         this.montgomeryBuilder = montgomeryBuilder;
+        this.armBuilder = armBuilder;
     }
 
     constantElement(v) {
