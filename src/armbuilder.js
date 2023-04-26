@@ -424,7 +424,7 @@ class Gen_rawIsEq extends GenBase {
         if (this.longNumber()) {
             this.accum = "x17";
 
-            this.op("mov", "x17", "zxr");
+            this.op("mov", "x17", "xzr");
             this.op_empty();
         }
 
@@ -1639,30 +1639,30 @@ class Gen_rawMul1 extends GenBase {
 
 function generate(width, space, canOptimizeConsensys) {
     let generators = [
-                new Gen_rawAdd(width, space, "rawAdd", false),
-                new Gen_rawAdd(width, space, "rawAddLS", true),
-                new Gen_rawSub(width, space, "rawSub", ""),
-                new Gen_rawSub(width, space, "rawSubSL", "SL"),
-                new Gen_rawSub(width, space, "rawSubLS", "LS"),
-                new Gen_rawSubRegular(width, space, "rawSubRegular"),
-                new Gen_rawNeg(width, space, "rawNeg"),
-                new Gen_rawNegLS(width, space, "rawNegLS"),
-                new Gen_rawMul(width, space, "rawMMul", canOptimizeConsensys),
-                new Gen_rawMul1(width, space, "rawMMul1", true, canOptimizeConsensys),
-                new Gen_rawMul1(width, space, "rawFromMontgomery", false, canOptimizeConsensys),
-                new Gen_rawIsZero(width, space),
-                new Gen_rawIsEq(width, space),
-                new Gen_rawCmp(width, space),
-                new Gen_rawCopy(width, space),
-                new Gen_rawCopyS2L(width, space),
-                new Gen_rawSwap(width, space),
-                new Gen_rawBinOp(width, space, "rawAnd", "and"),
-                new Gen_rawBinOp(width, space, "rawOr",  "orr"),
-                new Gen_rawBinOp(width, space, "rawXor", "eor"),
-                new Gen_rawBinOp(width, space, "rawNot", "mvn"),
-                new Gen_rawShr(width, space, "rawShr"),
-                new Gen_rawShl(width, space, "rawShl")
-            ];
+        new Gen_rawAdd(width, space, "rawAdd", false),
+        new Gen_rawAdd(width, space, "rawAddLS", true),
+        new Gen_rawSub(width, space, "rawSub", ""),
+        new Gen_rawSub(width, space, "rawSubSL", "SL"),
+        new Gen_rawSub(width, space, "rawSubLS", "LS"),
+        new Gen_rawSubRegular(width, space, "rawSubRegular"),
+        new Gen_rawNeg(width, space, "rawNeg"),
+        new Gen_rawNegLS(width, space, "rawNegLS"),
+        new Gen_rawMul(width, space, "rawMMul", canOptimizeConsensys),
+        new Gen_rawMul1(width, space, "rawMMul1", true, canOptimizeConsensys),
+        new Gen_rawMul1(width, space, "rawFromMontgomery", false, canOptimizeConsensys),
+        new Gen_rawIsZero(width, space),
+        new Gen_rawIsEq(width, space),
+        new Gen_rawCmp(width, space),
+        new Gen_rawCopy(width, space),
+        new Gen_rawCopyS2L(width, space),
+        new Gen_rawSwap(width, space),
+        new Gen_rawBinOp(width, space, "rawAnd", "and"),
+        new Gen_rawBinOp(width, space, "rawOr",  "orr"),
+        new Gen_rawBinOp(width, space, "rawXor", "eor"),
+        new Gen_rawBinOp(width, space, "rawNot", "mvn"),
+        new Gen_rawShr(width, space, "rawShr"),
+        new Gen_rawShl(width, space, "rawShl")
+    ];
     return generators.join("\n") + "\n";
 }
 
