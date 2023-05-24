@@ -4,50 +4,31 @@
 #include <cassert>
 #include <array>
 
-template <typename Curve, typename Field, size_t MaxBatchSize>
+template <typename Curve, typename Field>
 class BatchAdder {
 
 public:
     Curve &g;
+    // 256 bits * 4096 = 1 MB
+    std::vector<typename Field::Element> inverses; //    Alternative: std::array<typename Field::Element> inverses;
 
-    std::array<typename Field::Element, MaxBatchSize> inverses; //    Alternative: std::vector<typename Field::Element> inverses;
-//    size_t batch_size;
     typename Field::Element inverse_state;
 
-    BatchAdder(Curve& aCurve)
-            : g(aCurve), inverse_state(aCurve.F.one()) {
-        size_t max_batch_cnt = std::extent<decltype(inverses)>::value;
-//        batch_size = max_batch_cnt;
-        //  #pragma omp parallel for    TODO:Uncomment this line to parallelize the for loop
-        for (int i=0; i<max_batch_cnt; i++) {
-            g.F.copy(inverses[i], g.F.one());
-        }
+    BatchAdder(Curve& aCurve, size_t max_batch_size)
+            : g(aCurve), inverse_state(g.F.one()), inverses(max_batch_size, g.F.one()) {
     }
 
     void batch_add_indexed(
-//            typename Curve::PointAffine* dest,
-//            const typename Curve::PointAffine* src,
-//
-//            const std::vector<uint32_t>  &dest_indices,
-//            const std::vector<uint32_t>  &src_indices
-
-            std::vector<typename Curve::PointAffine>& dest,
-            std::vector<typename Curve::PointAffine>& src,
-            std::vector<uint32_t>& dest_indices,
-            std::vector<uint32_t>& src_indices
+        std::vector<typename Curve::PointAffine>& dest,
+        std::vector<typename Curve::PointAffine>& src,
+        std::vector<uint32_t>& dest_indices,
+        std::vector<uint32_t>& src_indices
 
     ) {
         size_t destLen = dest.size();
         size_t srcLen = src.size();
         size_t destIdxLen = dest_indices.size();
         size_t srcIdxLen = src_indices.size();
-
-//        size_t inversesLen = sizeof(inverses) / sizeof(inverses[0]);
-//        size_t destLen = sizeof(dest) / sizeof(dest[0]);
-//        size_t srcLen = sizeof(src) / sizeof(src[0]);
-//
-//        size_t destIdxLen = dest_indices.size();
-//        size_t srcIdxLen = src_indices.size();
 
         assert(destLen == srcLen && "insufficient entries in dest array");
         assert(destLen <= inverses.size() && "input length exceeds the max_batch_cnt, please increase max_batch_cnt during initialization!");

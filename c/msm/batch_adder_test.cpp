@@ -2,11 +2,12 @@
 #include <vector>
 #include "batch_adder.h"
 #include "../alt_bn128.hpp"
-#include "../../../../build/fq.hpp" //#include "fq.hpp"
+//#include "../../../../build/fq.hpp" //#include "fq.hpp"
 
 using namespace std;
 
 int main() {
+
     AltBn128::Engine engineInstance;
 
     const size_t max_batch_cnt = 10;
@@ -18,8 +19,9 @@ int main() {
     vector<uint32_t> dest_indices = {0, 1, 2, 3, 4};
     vector<uint32_t> src_indices = {4, 3, 2, 1, 0};
 
-    BatchAdder<AltBn128::Engine::G1, AltBn128::Engine::F1, max_batch_cnt> batchAdder(
-            engineInstance.g1
+    BatchAdder<AltBn128::Engine::G1, AltBn128::Engine::F1> batchAdder(
+            engineInstance.g1,
+            max_batch_cnt
     );
 
     batchAdder.batch_add_indexed(dest, src, dest_indices, src_indices);
