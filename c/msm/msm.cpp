@@ -19,16 +19,21 @@ void MSM<Curve>::run(typename Curve::Point &r, typename Curve::PointAffine *_bas
     if (bitsPerSlice < PME2_MIN_CHUNK_SIZE_BITS) bitsPerSlice = PME2_MIN_CHUNK_SIZE_BITS;
     nSlices = ((scalarSize * 8 - 1 ) / bitsPerSlice) + 1;
 
+    bases = _bases;
+    scalars = _scalars;
+    scalarSize = _scalarSize;
+    n = _n;
+    nThreads = _nThreads==0 ? omp_get_max_threads() : _nThreads;
+
 
     for(uint32_t i=0; i<n; i++) {           // the for is iterating over the base points
         std::vector<uint32_t> slices = slice(i, scalarSize, bitsPerSlice);
-
-        // process(i,slices
+        processPointAndSlices(i, slices);
     }
 
     // process complete
 
-    // reduce!
+    // reduce
 }
 
 template <typename Curve>
@@ -54,45 +59,60 @@ std::vector<uint32_t> MSM<Curve>::slice(uint32_t scalarIdx, uint32_t scalarSize,
 
 template <typename Curve>
 void MSM<Curve>::processPointAndSlices(uint32_t baseIdx, std::vector<uint32_t>& slices) {
+    assert(nSlices == slices.size() && "slices size should equal num_windows");  // TODO Remove later for efficiency
+
     typename Curve::PointAffine point = bases[baseIdx];
-    cur_points[cur_points_cnt] = point;
-    cur_points_cnt++;
+
+    curPoints.push_back(point);
+
     for (int win = 0; win < slices.size(); win++) {
         if (slices[win] > 0) {
-            uint32_t bucket_id = (win << bitsPerSlice) + slices[win] - 1;
-
-            if (!bitmap.testAndSet(bucket_id)) {
-                const auto& acc = buckets[bucket_id];
-                batch_adder::batchAddPhaseOne(acc, point, cur_batch_cnt);
-
-                cur_bkt_pnt_pairs[cur_batch_cnt] = ((uint64_t)bucket_id << 14) + cur_points_cnt - 1;
-                cur_batch_cnt++;
-            } else {
-                int free_node_index = list::pop(collision_list_nodes, available_list);
-
-                assert(free_node_index < 2 * max_collision_cnt);
-                collision_list_nodes[free_node_index] = ((uint64_t)bucket_id << 14) + 0x3FFF;
-                list::enqueue(collision_list_nodes, unprocessed_list, free_node_index);
-
-                collision_cnt++;
-                cur_points[max_batch_cnt + free_node_index] = point;
-            }
-
-            if (collision_cnt >= max_collision_cnt || cur_batch_cnt >= max_batch_cnt) {
-                process_batch();
-            }
+            uint32_t bucket_id = (win << bitsPerSlice) + slices[win] - 1; // skip slice == 0
+            processSlices(bucket_id, curPoints.size() - 1);
         }
     }
 }
 
 template <typename Curve>
-void MSM<Curve>::process_batch() {
+void MSM<Curve>::processSlices(uint32_t bucket_id, uint32_t currentPointIdx) {
+    // Check if the bucket_id bit is not set
+    if (!bitmap.testAndSet(bucket_id)) {
+        // If no collision found, add point to current batch
+        batchBucketsAndPoints.push_back(std::make_pair(bucket_id, currentPointIdx));
+    } else {
+        // In case of collision, add it to the collision list
+        collisionBucketsAndPoints.push_back(std::make_pair(bucket_id, curPoints[currentPointIdx]));
+    }
 
+    // If the count of collisions or the batch size reach their maximum limits, process the batch
+    if (collisionBucketsAndPoints.size() >= maxCollisionCnt ||
+            batchBucketsAndPoints.size() >= maxBatchCnt) {
+        processBatch();
+    }
 }
 
 template <typename Curve>
-void MSM<Curve>::reduce() {
+void MSM<Curve>::processBatch(){
+    if (batchBucketsAndPoints.empty()) {
+        return;
+    }
 
+    
 }
+
+
+
+
+
+
+//template <typename Curve>
+//void MSM<Curve>::process_batch() {
+//
+//}
+
+//template <typename Curve>
+//void MSM<Curve>::reduce() {
+//
+//}
 
 
