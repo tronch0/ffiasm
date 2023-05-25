@@ -4,6 +4,7 @@
 #include <memory.h>
 #include <iostream>
 #include <vector>
+#include <numeric>
 #include "../misc.hpp"
 #include "msm.hpp"
 
@@ -25,15 +26,16 @@ void MSM<Curve>::run(typename Curve::Point &r, typename Curve::PointAffine *_bas
     n = _n;
     nThreads = _nThreads==0 ? omp_get_max_threads() : _nThreads;
 
-
     for(uint32_t i=0; i<n; i++) {           // the for is iterating over the base points
         std::vector<uint32_t> slices = slice(i, scalarSize, bitsPerSlice);
         processPointAndSlices(i, slices);
     }
 
-    // process complete
+    // finish processing remaining elements
+    finalize();
 
-    // reduce
+    // combine all the results into a single point
+    reduce(r);
 }
 
 template <typename Curve>
@@ -97,22 +99,102 @@ void MSM<Curve>::processBatch(){
         return;
     }
 
-    
+    // Separate bucket_ids and point_idxs from batch_buckets_and_points
+    std::vector<uint32_t> bucket_ids, point_idxs;
+    for (const auto &bp : batchBucketsAndPoints) {
+        bucket_ids.push_back(bp.first);
+        point_idxs.push_back(bp.second);
+    }
+
+    // Perform batch addition
+    batchAdder.batch_add_indexed(buckets, bucket_ids, curPoints, point_idxs);
+
+    // Clean up current batch
+    bitmap.clear();
+    batchBucketsAndPoints.clear();
+
+    // Memorize the last point which is the current processing point
+    auto slicing_point = curPoints.back();
+    curPoints.pop_back();  // Remove the last point
+    curPoints.clear();
+
+    // Process collisions
+    int next_pos = 0;
+    for (int i = 0; i < collisionBucketsAndPoints.size(); i++) {
+        auto bucket_and_point = collisionBucketsAndPoints[i];
+        auto bucket_id = bucket_and_point.first; // or bucket_and_point.get<0>(), etc.
+        auto point = bucket_and_point.second; // or bucket_and_point.get<1>(), etc.
+
+
+        if (bitmap.testAndSet(bucket_id)) {
+            // collision found
+            std::swap(collisionBucketsAndPoints[next_pos], collisionBucketsAndPoints[i]);
+            next_pos += 1;
+        } else {
+            collisionBucketsAndPoints.push_back(std::make_pair(bucket_id, curPoints.size()));
+            curPoints.push_back(point);
+        }
+    }
+
+
+    // Remove processed collisions
+    collisionBucketsAndPoints.resize(next_pos);
+
+    // Push back the slicing_point to curPoints
+    curPoints.push_back(slicing_point);
+}
+
+template <typename Curve>
+void MSM<Curve>::finalize() {
+    processBatch();
+    while ( !( (batchBucketsAndPoints.size() == 0)  && (collisionBucketsAndPoints.size() == 0) ) )  {
+        processBatch();
+    }
+}
+
+template <typename Curve>
+void MSM<Curve>::reduce(typename Curve::Point &r) {
+    std::vector<uint32_t> window_starts(nSlices);
+    std::iota(window_starts.begin(), window_starts.end(), 0);
+
+    std::vector<typename Curve::Point> window_sums;
+    window_sums.reserve(window_starts.size());
+    for (auto &w_start : window_starts) {
+        size_t bucket_start = static_cast<size_t>(w_start << bitsPerSlice);
+        size_t bucket_end = bucket_start + (1 << bitsPerSlice);
+        window_sums.push_back(innerWindowReduce(bucket_start, bucket_end));
+    }
+
+
+    r = intraWindowReduce(window_sums);
+}
+
+template <typename Curve>
+typename Curve::Point MSM<Curve>::intraWindowReduce(std::vector<typename Curve::Point> window_sums) {
+    typename Curve::Point lowest = window_sums.front();
+    typename Curve::Point total = Curve::zero();
+
+    for (auto it = window_sums.rbegin(); it != window_sums.rend() - 1; ++it) {
+        total += *it;
+        for (int i = 0; i < bitsPerSlice; ++i) {
+            total.double_in_place();
+        }
+    }
+
+    return lowest + total;
 }
 
 
 
+template <typename Curve>
+typename Curve::Point MSM<Curve>::innerWindowReduce(size_t start, size_t end) {
+    typename Curve::Point running_sum = Curve::zero();
+    typename Curve::Point res = Curve::zero();
 
-
-
-//template <typename Curve>
-//void MSM<Curve>::process_batch() {
-//
-//}
-
-//template <typename Curve>
-//void MSM<Curve>::reduce() {
-//
-//}
-
+    for (auto it = buckets.rbegin() + (buckets.size() - end); it != buckets.rbegin() + (buckets.size() - start); ++it) {
+        running_sum.add_assign_mixed(*it);
+        res += running_sum;
+    }
+    return res;
+}
 
