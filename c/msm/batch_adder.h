@@ -4,24 +4,24 @@
 #include <cassert>
 #include <array>
 
-template <typename Curve, typename Field>
+template <typename Curve, typename BaseField>
 class BatchAdder {
 
 public:
     Curve &g;
     // 256 bits * 4096 = 1 MB
-    std::vector<typename Field::Element> inverses; //    Alternative: std::array<typename Field::Element> inverses;
+    std::vector<typename BaseField::Element> inverses; //    Alternative: std::array<typename Field::Element> inverses;
 
-    typename Field::Element inverse_state;
+    typename BaseField::Element inverse_state;
 
     BatchAdder(Curve& aCurve, size_t max_batch_size)
             : g(aCurve), inverse_state(g.F.one()), inverses(max_batch_size, g.F.one()) {
     }
 
-    void batch_add_indexed(
+    void batchAddIndexed(
         std::vector<typename Curve::PointAffine>& dest,
-        std::vector<typename Curve::PointAffine>& src,
         std::vector<uint32_t>& dest_indices,
+        std::vector<typename Curve::PointAffine>& src,
         std::vector<uint32_t>& src_indices
 
     ) {
@@ -38,13 +38,13 @@ public:
         for (size_t i = 0; i < destIdxLen; ++i) {
             size_t dest_idx = dest_indices[i];
             size_t src_idx = src_indices[i];
-            batch_add_phase_one(dest[dest_idx], src[src_idx], i);
+            batchAddPhaseOne(dest[dest_idx], src[src_idx], i);
         }
         inverse();
         for (size_t i = destIdxLen - 1; i >= 0; --i) {
             size_t dest_idx = dest_indices[i];
             size_t src_idx = src_indices[i];
-            batch_add_phase_two(dest[dest_idx], src[src_idx], i);
+            batchAddPhaseTwo(dest[dest_idx], src[src_idx], i);
         }
     }
 
@@ -70,15 +70,15 @@ private:
     ///      - inverse_state = inverse_state * deltaX
     ///      - addition result acc
 
-    void batch_add_phase_one(typename Curve::PointAffine &p, typename Curve::PointAffine &q, size_t idx) {
+    void batchAddPhaseOne(typename Curve::PointAffine &p, typename Curve::PointAffine &q, size_t idx) {
         assert(idx < inverses.size() && "index exceeds the max_batch_cnt, please increase max_batch_cnt during initialization!");
 
         if (g.isZero(p) || g.isZero(q)) {
             return;
         }
 
-        typename Field::Element delta_x;
-        typename Field::Element delta_y;
+        typename BaseField::Element delta_x;
+        typename BaseField::Element delta_y;
 
         g.F.sub(delta_x, q.x, p.x);
         if (g.F.isZero(delta_x)) {
@@ -102,7 +102,7 @@ private:
     }
 
     /// should call inverse() between phase_one and phase_two
-    void batch_add_phase_two(typename Curve::PointAffine& p, typename Curve::PointAffine& q, size_t idx) {
+    void batchAddPhaseTwo(typename Curve::PointAffine& p, typename Curve::PointAffine& q, size_t idx) {
         assert(idx < inverses.size() && "Size mismatch between dest and indices!");
 
         if (g.isZero(p) || g.isZero(q)) {
@@ -112,13 +112,13 @@ private:
             return;
         }
 
-        typename Field::Element inverse;
+        typename BaseField::Element inverse;
         g.F.copy(inverse, inverses[idx]);
 
         g.F.mul(inverse, inverse, inverse_state);
 
-        typename Field::Element delta_x;
-        typename Field::Element delta_y;
+        typename BaseField::Element delta_x;
+        typename BaseField::Element delta_y;
 
         g.F.sub(delta_x, q.x, p.x);  //q.X - p.X;
         g.F.sub(delta_y, q.y, p.y);  //q.Y - p.Y;
@@ -138,8 +138,8 @@ private:
 
         g.F.mul(inverse_state, inverse_state, delta_x);
 
-        typename Field::Element s;
-        typename Field::Element ss;
+        typename BaseField::Element s;
+        typename BaseField::Element ss;
 
         g.F.mul(s, delta_y, inverse);
         g.F.square(ss, s);

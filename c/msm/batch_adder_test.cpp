@@ -2,6 +2,7 @@
 #include <vector>
 #include "batch_adder.h"
 #include "../alt_bn128.hpp"
+
 //#include "../../../../build/fq.hpp" //#include "fq.hpp"
 
 using namespace std;
@@ -24,7 +25,7 @@ int main() {
             max_batch_cnt
     );
 
-    batchAdder.batch_add_indexed(dest, src, dest_indices, src_indices);
+    batchAdder.batchAddIndexed(dest, dest_indices,src, src_indices);
     // Print the results
     for (size_t i = 0; i < array_size; ++i) {
         cout << "dest[" << i << "] = " << dest[i].x.v << endl;
