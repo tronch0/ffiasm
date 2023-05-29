@@ -1,6 +1,7 @@
 #include <string>
 
 #include "exp.hpp"
+//#include "multiexp.hpp"
 //#include "run.hpp"
 #include "msm/msm.hpp"
 #include <iostream>
@@ -146,8 +147,24 @@ public:
 
 //        return quick_msm(&msm_run);
 
-        MSM<Curve<BaseField>> msm(*this);
+//        MSM<Curve<BaseField>, BaseField> msm(*this);
+//        msm.run(r, bases, scalars, scalarSize, n, nThreads);
+
+        // ***************
+
+        // New multiexp
+        // ***************
+
+        MSM<Curve<BaseField>, BaseField> msm(*this);
         msm.run(r, bases, scalars, scalarSize, n, nThreads);
+
+        // ***************
+
+        // Old multiexp
+        // ***************
+//        ParallelMultiexp<Curve<BaseField>> pm(*this);
+//        pm.multiexp(r, bases, scalars, scalarSize, n, nThreads);
+
     }
 
 #ifdef COUNT_OPS
