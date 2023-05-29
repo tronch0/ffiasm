@@ -8,17 +8,17 @@
 #include "../misc.hpp"
 #include "msm.hpp"
 
-template <typename Curve>
-void MSM<Curve>::run(typename Curve::Point &r, typename Curve::PointAffine *_bases, uint8_t* _scalars, uint32_t _scalarSize, uint32_t _n, uint32_t _nThreads) {
+template <typename Curve, typename BaseField>
+void MSM<Curve, BaseField>::run(typename Curve::Point &r, typename Curve::PointAffine *_bases, uint8_t* _scalars, uint32_t _scalarSize, uint32_t _n, uint32_t _nThreads) {
 
     // calculate and stored all members of the MSM.
     // *******************************************
 
     // double check if to remove any constraints from here (all consts are from previous implementation)
-    bitsPerSlice = log2(n / PME2_PACK_FACTOR);
+    bitsPerSlice = log2(_n / PME2_PACK_FACTOR);
     if (bitsPerSlice > PME2_MAX_CHUNK_SIZE_BITS) bitsPerSlice = PME2_MAX_CHUNK_SIZE_BITS;
     if (bitsPerSlice < PME2_MIN_CHUNK_SIZE_BITS) bitsPerSlice = PME2_MIN_CHUNK_SIZE_BITS;
-    nSlices = ((scalarSize * 8 - 1 ) / bitsPerSlice) + 1;
+    nSlices = ((_scalarSize * 8 - 1 ) / bitsPerSlice) + 1;
 
     bases = _bases;
     scalars = _scalars;
@@ -26,8 +26,20 @@ void MSM<Curve>::run(typename Curve::Point &r, typename Curve::PointAffine *_bas
     n = _n;
     nThreads = _nThreads==0 ? omp_get_max_threads() : _nThreads;
 
+    std::cout << "scalarSize: " << scalarSize << std::endl;
+    for (uint32_t i=0; i<scalarSize; i++) {
+        std::cout << "scalar " << i << ": " << (uint64_t)_scalars[i] << std::endl;
+    }
+
     for(uint32_t i=0; i<n; i++) {           // the for is iterating over the base points
         std::vector<uint32_t> slices = slice(i, scalarSize, bitsPerSlice);
+
+         //print slices size and content
+//         std::cout << "slices size: " << slices.size() << std::endl;
+//         for (uint32_t j=0; j<slices.size(); j++) {
+//             std::cout << "slice " << j << ": " << slices[j] << std::endl;
+//         }
+
         processPointAndSlices(i, slices);
     }
 
@@ -38,8 +50,8 @@ void MSM<Curve>::run(typename Curve::Point &r, typename Curve::PointAffine *_bas
     reduce(r);
 }
 
-template <typename Curve>
-std::vector<uint32_t> MSM<Curve>::slice(uint32_t scalarIdx, uint32_t scalarSize, uint32_t bitsPerChunk) {
+template <typename Curve, typename BaseField>
+std::vector<uint32_t> MSM<Curve, BaseField>::slice(uint32_t scalarIdx, uint32_t scalarSize, uint32_t bitsPerChunk) {
     std::vector<uint32_t> slices;
     uint32_t chunksCount = (scalarSize * 8 + bitsPerChunk - 1) / bitsPerChunk; // Calculate chunks count, same as slices in rust
     slices.resize(chunksCount);
@@ -59,8 +71,8 @@ std::vector<uint32_t> MSM<Curve>::slice(uint32_t scalarIdx, uint32_t scalarSize,
     return slices;
 }
 
-template <typename Curve>
-void MSM<Curve>::processPointAndSlices(uint32_t baseIdx, std::vector<uint32_t>& slices) {
+template <typename Curve, typename BaseField>
+void MSM<Curve, BaseField>::processPointAndSlices(uint32_t baseIdx, std::vector<uint32_t>& slices) {
     assert(nSlices == slices.size() && "slices size should equal num_windows");  // TODO Remove later for efficiency
 
     typename Curve::PointAffine point = bases[baseIdx];
@@ -75,8 +87,8 @@ void MSM<Curve>::processPointAndSlices(uint32_t baseIdx, std::vector<uint32_t>& 
     }
 }
 
-template <typename Curve>
-void MSM<Curve>::processSlices(uint32_t bucket_id, uint32_t currentPointIdx) {
+template <typename Curve, typename BaseField>
+void MSM<Curve, BaseField>::processSlices(uint32_t bucket_id, uint32_t currentPointIdx) {
     // Check if the bucket_id bit is not set
     if (!bitmap.testAndSet(bucket_id)) {
         // If no collision found, add point to current batch
@@ -93,8 +105,8 @@ void MSM<Curve>::processSlices(uint32_t bucket_id, uint32_t currentPointIdx) {
     }
 }
 
-template <typename Curve>
-void MSM<Curve>::processBatch(){
+template <typename Curve, typename BaseField>
+void MSM<Curve, BaseField>::processBatch(){
     if (batchBucketsAndPoints.empty()) {
         return;
     }
@@ -106,8 +118,9 @@ void MSM<Curve>::processBatch(){
         point_idxs.push_back(bp.second);
     }
 
+
     // Perform batch addition
-    batchAdder.batch_add_indexed(buckets, bucket_ids, curPoints, point_idxs);
+    batchAdder.batchAddIndexed(buckets, bucket_ids, curPoints, point_idxs);
 
     // Clean up current batch
     bitmap.clear();
@@ -131,7 +144,7 @@ void MSM<Curve>::processBatch(){
             std::swap(collisionBucketsAndPoints[next_pos], collisionBucketsAndPoints[i]);
             next_pos += 1;
         } else {
-            collisionBucketsAndPoints.push_back(std::make_pair(bucket_id, curPoints.size()));
+            batchBucketsAndPoints.push_back(std::make_pair(bucket_id, curPoints.size()));
             curPoints.push_back(point);
         }
     }
@@ -144,16 +157,16 @@ void MSM<Curve>::processBatch(){
     curPoints.push_back(slicing_point);
 }
 
-template <typename Curve>
-void MSM<Curve>::finalize() {
+template <typename Curve, typename BaseField>
+void MSM<Curve, BaseField>::finalize() {
     processBatch();
     while ( !( (batchBucketsAndPoints.size() == 0)  && (collisionBucketsAndPoints.size() == 0) ) )  {
         processBatch();
     }
 }
 
-template <typename Curve>
-void MSM<Curve>::reduce(typename Curve::Point &r) {
+template <typename Curve, typename BaseField>
+void MSM<Curve, BaseField>::reduce(typename Curve::Point &r) {
     std::vector<uint32_t> window_starts(nSlices);
     std::iota(window_starts.begin(), window_starts.end(), 0);
 
@@ -169,31 +182,36 @@ void MSM<Curve>::reduce(typename Curve::Point &r) {
     r = intraWindowReduce(window_sums);
 }
 
-template <typename Curve>
-typename Curve::Point MSM<Curve>::intraWindowReduce(std::vector<typename Curve::Point> window_sums) {
+template <typename Curve, typename BaseField>
+typename Curve::Point MSM<Curve, BaseField>::intraWindowReduce(std::vector<typename Curve::Point> window_sums) {
     typename Curve::Point lowest = window_sums.front();
-    typename Curve::Point total = Curve::zero();
+    typename Curve::Point total = g.zero();
 
     for (auto it = window_sums.rbegin(); it != window_sums.rend() - 1; ++it) {
-        total += *it;
+//        total += *it;
+        g.add(total, *it, total);
         for (int i = 0; i < bitsPerSlice; ++i) {
-            total.double_in_place();
+            g.dbl(total,total);
         }
     }
 
-    return lowest + total;
+//    return lowest + total;
+    g.add(total, lowest, total);
+    return total;
 }
 
 
 
-template <typename Curve>
-typename Curve::Point MSM<Curve>::innerWindowReduce(size_t start, size_t end) {
-    typename Curve::Point running_sum = Curve::zero();
-    typename Curve::Point res = Curve::zero();
+template <typename Curve, typename BaseField>
+typename Curve::Point MSM<Curve, BaseField>::innerWindowReduce(size_t start, size_t end) {
+    typename Curve::Point running_sum = g.zero();
+    typename Curve::Point res = g.zero();
 
     for (auto it = buckets.rbegin() + (buckets.size() - end); it != buckets.rbegin() + (buckets.size() - start); ++it) {
-        running_sum.add_assign_mixed(*it);
-        res += running_sum;
+        //running_sum.add_assign_mixed(*it);
+        g.add(running_sum, *it, running_sum);
+        //res += running_sum;
+        g.add(res, running_sum, res);
     }
     return res;
 }
