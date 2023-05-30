@@ -5,40 +5,49 @@
 #include <iostream>
 #include <vector>
 #include <numeric>
-#include "../misc.hpp"
+//#include "../misc.hpp"
 #include "msm.hpp"
 
 template <typename Curve, typename BaseField>
-void MSM<Curve, BaseField>::run(typename Curve::Point &r, typename Curve::PointAffine *_bases, uint8_t* _scalars, uint32_t _scalarSize, uint32_t _n, uint32_t _nThreads) {
-
-    // calculate and stored all members of the MSM.
-    // *******************************************
-
-    // double check if to remove any constraints from here (all consts are from previous implementation)
-    bitsPerSlice = log2(_n / PME2_PACK_FACTOR);
-    if (bitsPerSlice > PME2_MAX_CHUNK_SIZE_BITS) bitsPerSlice = PME2_MAX_CHUNK_SIZE_BITS;
-    if (bitsPerSlice < PME2_MIN_CHUNK_SIZE_BITS) bitsPerSlice = PME2_MIN_CHUNK_SIZE_BITS;
-    nSlices = ((_scalarSize * 8 - 1 ) / bitsPerSlice) + 1;
-
-    bases = _bases;
-    scalars = _scalars;
-    scalarSize = _scalarSize;
-    n = _n;
+void MSM<Curve, BaseField>::run(typename Curve::Point &r, uint32_t _nThreads) {
+#ifdef _OPENMP
     nThreads = _nThreads==0 ? omp_get_max_threads() : _nThreads;
+    ThreadLimit threadLimit (nThreads);
+#else
+    nThreads = 1;
+#endif
 
-    std::cout << "scalarSize: " << scalarSize << std::endl;
-    for (uint32_t i=0; i<scalarSize; i++) {
-        std::cout << "scalar " << i << ": " << (uint64_t)_scalars[i] << std::endl;
-    }
+//    std::cout << "scalarSize: " << scalarSize << std::endl;
+//    for (uint32_t i=0; i<n; i++) {
+//        std::cout << "scalar " << i << ": " << (uint64_t)_scalars[i] << std::endl;
+//    }
 
     for(uint32_t i=0; i<n; i++) {           // the for is iterating over the base points
         std::vector<uint32_t> slices = slice(i, scalarSize, bitsPerSlice);
 
-         //print slices size and content
+         // print slices size and content
 //         std::cout << "slices size: " << slices.size() << std::endl;
 //         for (uint32_t j=0; j<slices.size(); j++) {
 //             std::cout << "slice " << j << ": " << slices[j] << std::endl;
 //         }
+
+         // print the buckets size and elements
+//        std::cout << "buckets size: " << buckets.size() << std::endl;
+//        for (uint32_t j=0; j<buckets.size(); j++) {
+//            typename Curve::Point point;
+//            g.copy(point, buckets[j]); // Convert PointAffine to Point
+//            std::string point_str = g.toString(point); // Now you can use the toString function
+//            std::cout << "bucket " << j << ": " << point_str << std::endl;
+//        }
+        //curPoints
+//        std::cout << "curPoints size: " << curPoints.size() << std::endl;
+//        for (uint32_t j=0; j<curPoints.size(); j++) {
+//            typename Curve::Point point;
+//            g.copy(point, curPoints[j]); // Convert PointAffine to Point
+//            std::string point_str = g.toString(point); // Now you can use the toString function
+//            std::cout << "curPoints " << j << ": " << point_str << std::endl;
+//        }
+
 
         processPointAndSlices(i, slices);
     }
@@ -90,7 +99,7 @@ void MSM<Curve, BaseField>::processPointAndSlices(uint32_t baseIdx, std::vector<
 template <typename Curve, typename BaseField>
 void MSM<Curve, BaseField>::processSlices(uint32_t bucket_id, uint32_t currentPointIdx) {
     // Check if the bucket_id bit is not set
-    if (!bitmap.testAndSet(bucket_id)) {
+    if (!bitmap->testAndSet(bucket_id)) {
         // If no collision found, add point to current batch
         batchBucketsAndPoints.push_back(std::make_pair(bucket_id, currentPointIdx));
     } else {
@@ -120,10 +129,10 @@ void MSM<Curve, BaseField>::processBatch(){
 
 
     // Perform batch addition
-    batchAdder.batchAddIndexed(buckets, bucket_ids, curPoints, point_idxs);
+    batchAdder->batchAddIndexed(buckets, nBuckets, bucket_ids, curPoints, point_idxs);
 
     // Clean up current batch
-    bitmap.clear();
+    bitmap->clear();
     batchBucketsAndPoints.clear();
 
     // Memorize the last point which is the current processing point
@@ -139,7 +148,7 @@ void MSM<Curve, BaseField>::processBatch(){
         auto point = bucket_and_point.second; // or bucket_and_point.get<1>(), etc.
 
 
-        if (bitmap.testAndSet(bucket_id)) {
+        if (bitmap->testAndSet(bucket_id)) {
             // collision found
             std::swap(collisionBucketsAndPoints[next_pos], collisionBucketsAndPoints[i]);
             next_pos += 1;
@@ -188,7 +197,7 @@ typename Curve::Point MSM<Curve, BaseField>::intraWindowReduce(std::vector<typen
     typename Curve::Point total = g.zero();
 
     for (auto it = window_sums.rbegin(); it != window_sums.rend() - 1; ++it) {
-//        total += *it;
+
         g.add(total, *it, total);
         for (int i = 0; i < bitsPerSlice; ++i) {
             g.dbl(total,total);
@@ -198,6 +207,17 @@ typename Curve::Point MSM<Curve, BaseField>::intraWindowReduce(std::vector<typen
 //    return lowest + total;
     g.add(total, lowest, total);
     return total;
+
+
+
+//    for (auto rit = windowSums.rbegin() + 1; rit != windowSums.rend(); ++rit) {
+//        total += *rit;
+//        for (int i = 0; i < windowBits; ++i) {
+//            total.double_in_place();
+//        }
+//    }
+//
+//    return lowest + total;
 }
 
 
@@ -207,12 +227,11 @@ typename Curve::Point MSM<Curve, BaseField>::innerWindowReduce(size_t start, siz
     typename Curve::Point running_sum = g.zero();
     typename Curve::Point res = g.zero();
 
-    for (auto it = buckets.rbegin() + (buckets.size() - end); it != buckets.rbegin() + (buckets.size() - start); ++it) {
-        //running_sum.add_assign_mixed(*it);
-        g.add(running_sum, *it, running_sum);
-        //res += running_sum;
+    for(int i = end - 1; i-- > start;) {
+        g.add(running_sum, buckets[i], running_sum);
         g.add(res, running_sum, res);
     }
+
     return res;
 }
 

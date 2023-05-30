@@ -19,30 +19,30 @@ public:
     }
 
     void batchAddIndexed(
-        std::vector<typename Curve::PointAffine>& dest,
-        std::vector<uint32_t>& dest_indices,
+        typename Curve::PointAffine* dest,
+        size_t destSize,
+        std::vector<uint32_t>& destIndices,
+
         std::vector<typename Curve::PointAffine>& src,
         std::vector<uint32_t>& src_indices
-
     ) {
-        size_t destLen = dest.size();
-        size_t srcLen = src.size();
-        size_t destIdxLen = dest_indices.size();
+        size_t destIdxLen = destIndices.size();
         size_t srcIdxLen = src_indices.size();
 
-        assert(destLen == srcLen && "insufficient entries in dest array");
-        assert(destLen <= inverses.size() && "input length exceeds the max_batch_cnt, please increase max_batch_cnt during initialization!");
+//        assert(destIdxLen == destSize && "insufficient entries in dest array");
+        assert(destSize > destIdxLen && "insufficient entries in dest array");
+        assert(destIdxLen <= inverses.size() && "input length exceeds the max_batch_cnt, please increase max_batch_cnt during initialization!");
         assert(destIdxLen == srcIdxLen && "length of dest_indexes and src_indexes don't match!");
 
         reset();
         for (size_t i = 0; i < destIdxLen; ++i) {
-            size_t dest_idx = dest_indices[i];
+            size_t dest_idx = destIndices[i];
             size_t src_idx = src_indices[i];
             batchAddPhaseOne(dest[dest_idx], src[src_idx], i);
         }
         inverse();
-        for (size_t i = destIdxLen - 1; i >= 0; --i) {
-            size_t dest_idx = dest_indices[i];
+        for (size_t i = destIdxLen - 1; i-- > 0;) {
+            size_t dest_idx = destIndices[i];
             size_t src_idx = src_indices[i];
             batchAddPhaseTwo(dest[dest_idx], src[src_idx], i);
         }
