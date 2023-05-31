@@ -40,7 +40,10 @@ public:
             size_t src_idx = src_indices[i];
             batchAddPhaseOne(dest[dest_idx], src[src_idx], i);
         }
+//        std::cout << "Inverse before: " << g.F.toString(inverse_state) << std::endl;
         inverse();
+//        std::cout << "Inverse after: " << g.F.toString(inverse_state) << std::endl;
+
         for (size_t i = destIdxLen - 1; i-- > 0;) {
             size_t dest_idx = destIndices[i];
             size_t src_idx = src_indices[i];
